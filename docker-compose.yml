@@ -1,0 +1,12 @@
+version: "3"
+services:
+  mimosa-app:
+    image: mmblack04/mimosa:latest
+    container_name: mimosa
+    ports:
+      - "5000:5000"
+    volumes:
+      - mimosa_data:/app
+
+volumes:
+  mimosa_data:
