@@ -1,625 +1,505 @@
-const form = document.getElementById("add-form");
-const itemList = document.getElementById("item-list");
-const selectEspDropdownIP = document.getElementById("ip");
-const CopyBnt = document.getElementById("copy-item")
-let isEditingItem = false;
-let editingItemId = null; // Track the ID of the item being edited
-
-
-async function uploadImage() {
-  const formData = new FormData(document.getElementById('add-form'))
-  const file = formData.get('file')
-  // returns undefined if no file is selected
-  if (file.name.length === 0) {
-    console.log('no file uploaded')
-    return
-  }
-  const response = await fetch('/upload', { body: formData, method: 'POST' })
-  const imageURL = await response.text()
-  console.log(`uploaded file to ${imageURL}`)
-  return new URL(window.location.href + imageURL)
-}
-
-// Add item to list
-async function addItem(event) {
-  event.preventDefault();
-
-  if(document.getElementById("image").value !== localStorage.getItem('edit_image_path')) { //check whether image has changed and only then load image
-    let localImage = await uploadImage();
-    if (!!localImage) {
-      // set image path to newly uploaded file
-      document.getElementById("image").value = localImage
-    }
-  }
-  submitLights();
-  const name = document.getElementById("name").value;
-  const link = document.getElementById("link").value || "";
-  const image = document.getElementById("image").value;
-  let position = localStorage.getItem('led_positions');
-  const quantity = document.getElementById("quantity").value;
-  const selectedEspDropdown = document.getElementById("ip"); // Get the selected ESP dropdown
-  const tags = localStorage.getItem('item_tags');
-  const selectedEspValue = selectedEspDropdown.value;
-  if (selectedEspValue === "select") {
-    // Check if the user has not selected anything
-    alert("Please select an ESP.");
-    return;
-  }
-  if (position === "[]") {
-    // Check if the user has not selected anything
-    if(!isEditingItem){alert("Please select an LEDS to light up.");
-      return;}
-    else{
-      position = localStorage.getItem('edit_led_positions');
-      position = JSON.parse(position); // Convert the string to an array
-      }
-  }
-  // Fetch the IP associated with the selected ESP
-  fetch(`/api/esp/${selectedEspValue}`)
-      .then((response) => response.json())
-      .then((espData) => {
-        const ip = espData.name;
-        const item = {
-          name,
-          link,
-          image,
-          position,
-          quantity,
-          ip,
-          tags,
-        };
-        if (isEditingItem) {
-          // We are editing, so send a PUT request to update the existing item
-          fetch(`/api/items/${editingItemId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(item),
-          })
-              .then((response) => response.json())
-              .then((data) => {
-                item.id = data.id;
-                const li = itemList.querySelector(`li[data-id="${editingItemId}"]`);
-                const updatedLi = createItemElement(item);
-                itemList.replaceChild(updatedLi, li);
-                isEditingItem = false; // Reset the editing flag
-                form.reset();
-                toggleAddForm();
-                document.getElementById("btn-add").innerHTML = "Add item"; // Change the button text back to "Add item"
-              })
-              .catch((error) => console.error(error));
+function populateEspDropdown() {
+    const selectEspDropdown = document.getElementById("item_esp_select");
+    selectEspDropdown.innerHTML = "";
+    // Fetch ESP devices
+    fetch("/api/esp").then((response) => response.json()).then((data) => {
+        if (data.length > 0) {
+            // Devices found: Populate dropdown and select the first one
+            data.forEach((esp, index) => {
+                const option = document.createElement("option");
+                option.value = esp.id;
+                option.dataset.espRows = esp.rows;
+                option.dataset.espColumns = esp.cols;
+                option.dataset.espStartY = esp.start_top;
+                option.dataset.espStartX = esp.start_left;
+                option.dataset.espSerpentine = esp.serpentine_direction;
+                option.textContent = esp.name + " (" + esp.esp_ip + ")";
+                selectEspDropdown.appendChild(option);
+                if (index === 0) {
+                    selectEspDropdown.selectedIndex = index;
+                }
+            });
         } else {
-          // Add the item with the correct IP
-          fetch("/api/items", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(item),
-          })
-              .then((response) => response.json())
-              .then((data) => {
-                const li = createItemElement(data);
-                isEditingItem = false;
-                itemList.appendChild(li);
-                form.reset();
-                toggleAddForm();
-                removeLocalStorage();
-              })
-              .catch((error) => console.error(error));
+            // No devices found: Disable dropdown and display message
+            selectEspDropdown.disabled = true;
+            const messageOption = document.createElement("option");
+            messageOption.textContent = "Please add an ESP device first...";
+            messageOption.disabled = true;
+            selectEspDropdown.appendChild(messageOption);
         }
-      })
-      .catch((error) => console.error(error));
-  // Clear the stored data in the 'led_positions' key
-  removeLocalStorage();
-  loadTags();
-
-}
-
-function removeLocalStorage(){
-  localStorage.removeItem('led_positions');
-  localStorage.removeItem('edit_led_positions');
-  localStorage.removeItem('item_tags');
-  localStorage.removeItem('edit_image_path');
-}
-
-
-function toggleAddForm() {
-  const btn = document.getElementById("btn-add");
-  const container = document.getElementById("form-container");
-  document.getElementById("select_led_container").style.display = "none";
-  if (container.style.display === "block" && !isEditingItem) {
-    loadTags();
-    container.style.display = "none";
-    btn.innerHTML = "Add item";
-    form.reset();
-    document.getElementById("save-item").innerHTML = "Add";
-  } else {
-    container.style.display = "block";
-    btn.innerHTML = "Close";
-    if(!isEditingItem){
-      form.reset();
-      removeLocalStorage();
-      CopyBnt.style.display = "none";
-      resetTagSelection(tagContainer);
-    }
-  }
-}
-
-// Delete item
-function deleteItem(item) {
-  const response = confirm(`Are you sure you want to delete ${item.name}?`);
-  const id = item.id;
-  if (response) {
-    // Delete item from database
-    fetch(`/api/items/${id}`, { method: "DELETE" })
-        .then(() => {
-          const li = itemList.querySelector(`li[data-id="${id}"]`);
-          li.parentNode.removeChild(li);
-        })
-        .catch((error) => console.error(error));
-  }
-}
-
-// Create delete button
-function createDeleteButton(item) {
-  const deleteBtn = document.createElement("button");
-  deleteBtn.innerText = "Delete";
-
-  function setButtonStyle(isHovered) {
-    deleteBtn.innerHTML = isHovered ? "delete" : "Delete";
-    deleteBtn.className = isHovered ? 'material-symbols-outlined' : '';
-    deleteBtn.classList.add(
-        "bg-red-500",
-        "h-8",
-        "w-full",
-        "rounded-md",
-        "text-white",
-        "justify-center",
-        "items-center",
-        "mx-auto"
-    );
-    if (isHovered) {
-      deleteBtn.classList.add("hover:bg-red-700");
-      deleteBtn.classList.add("text-xl");
-    } else {
-      deleteBtn.classList.add("text-xs");
-    }
-  }
-  // Set the initial style
-  setButtonStyle(false);
-  // Set the inner text to "trash_can_open" on hover
-  deleteBtn.addEventListener("mouseover", () => {
-    setButtonStyle(true);
-  });
-  // Set the inner text back to "Delete" when not hovering
-  deleteBtn.addEventListener("mouseout", () => {
-    setButtonStyle(false);
-  });
-  deleteBtn.addEventListener("click", () => deleteItem(item));
-  return deleteBtn;
-}
-
-
-// Create edit button
-function createEditButton(item) {
-  const editBtn = document.createElement("button");
-  editBtn.innerText = "Edit";
-
-  function setButtonStyle(isHovered) {
-    editBtn.className = isHovered ? 'material-symbols-outlined' : '';
-    editBtn.classList.add(
-        "bg-blue-500",
-        "h-8",
-        "w-full",
-        "rounded-md",
-        "text-white",
-        "justify-center",
-        "items-center",
-        "mx-auto"
-    );
-    if (isHovered) {
-      editBtn.classList.add("hover:bg-blue-700");
-      editBtn.classList.add("text-xl");
-    } else {
-      editBtn.classList.add("hover:bg-blue-700");
-      editBtn.classList.add("text-xs");
-    }
-  }
-
-  // Set the initial style
-  setButtonStyle(false);
-
-  // Set the inner text to "edit" on hover
-  editBtn.addEventListener("mouseover", () => {
-    editBtn.innerText = "edit";
-    setButtonStyle(true);
-  });
-
-  // Set the inner text back to "Edit" when not hovering
-  editBtn.addEventListener("mouseout", () => {
-    editBtn.innerText = "Edit";
-    setButtonStyle(false);
-  });
-  editBtn.addEventListener("click", () => {
-    isEditingItem = true;
-    resetTagSelection(tagContainer);
-    document.getElementById("name").value = item.name;
-    document.getElementById("link").value = item.link;
-    document.getElementById("image").value = item.image;
-    document.getElementById("quantity").value = item.quantity;
-    localStorage.setItem('led_positions', JSON.stringify(item.position))
-    localStorage.setItem('edit_led_positions', JSON.stringify(item.position))
-    localStorage.setItem('edit_image_path', JSON.stringify(item.image))
-    if(item.tags){
-      const cleanedTags = item.tags.replace(/[\[\]'"`\\]/g, '');
-      const itemTagsArray = cleanedTags.split(',');
-      localStorage.setItem('item_tags', JSON.stringify(itemTagsArray))
-      PopulateTagSelection(itemTagsArray);
-    }
-    //console.log('LED data:', JSON.parse(localStorage.getItem('led_positions')));
-    const selectedValue = item.ip; // The IP to select
-    selectEspDropdownIP.selectedIndex = findIndexByIP(selectedValue);
-    window.scrollTo({
-      top: 10,
-      behavior: "auto"
-    });
-    CopyBnt.style.display = "block";
-    toggleAddForm();
-    editingItemId = item.id;
-    document.getElementById("save-item").innerHTML = "Save Changes";
-    generateGrid();
-  });
-
-  return editBtn;
-}
-// Create locate button
-function createLocateButton(item) {
-  const locateBtn = document.createElement("button");
-  locateBtn.innerText = "Locate";
-
-  function setButtonStyle(isHovered) {
-    locateBtn.innerHTML = isHovered ? "lightbulb" : "Locate";
-    locateBtn.className = isHovered ? 'material-symbols-outlined' : '';
-    locateBtn.classList.add(
-        "bg-blue-500",
-        "h-8",
-        "w-full",
-        "rounded-md",
-        "text-white",
-        "justify-center",
-        "items-center",
-        "mx-auto"
-    );
-    if (isHovered) {
-      locateBtn.classList.add("hover:bg-blue-700");
-      locateBtn.classList.add("text-xl");
-    } else {
-      locateBtn.classList.add("hover:bg-blue-700");
-      locateBtn.classList.add("text-xs");
-    }
-  }
-
-  // Set the initial style
-  setButtonStyle(false);
-
-  // Set the inner text to "locate" on hover
-  locateBtn.addEventListener("mouseover", () => {
-    locateBtn.innerText = "locate";
-    setButtonStyle(true);
-  });
-
-  // Set the inner text back to "Locate" when not hovering
-  locateBtn.addEventListener("mouseout", () => {
-    locateBtn.innerText = "Locate";
-    setButtonStyle(false);
-  });
-  locateBtn.addEventListener("click", () => {
-    fetch(`/api/items/${item.id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ action: "locate" }),
+        console.log("Dropdown populated:", data); // Logging the output to console
+        let rows = document.getElementById('item_esp_select').options[0].getAttribute("data-esp-rows");
+        let columns = document.getElementById('item_esp_select').options[0].getAttribute("data-esp-columns");
+        let startX = document.getElementById('item_esp_select').options[0].getAttribute("data-esp-start-x");
+        let startY = document.getElementById('item_esp_select').options[0].getAttribute("data-esp-start-y");
+        let serpentineDirection = document.getElementById('item_esp_select').options[0].getAttribute("data-esp-serpentine");
+        drawGrid("item", rows, columns, startX, startY, serpentineDirection);
     }).catch((error) => console.error(error));
-  });
-  return locateBtn;
 }
-// Create add quantity button
-function createAddQuantityButton(item) {
-  const addQuantityBtn = document.createElement("button");
-  addQuantityBtn.setAttribute('class', 'material-symbols-outlined');
-  addQuantityBtn.innerText = "add_circle";
-  addQuantityBtn.classList.add(
-      "text-blue-500",
-      "hover:text-blue-700",
-      "h-8",
-      "w-8",
-      "rounded-full",
-      "text-4xl",
-      "font-bold",
-      "flex",
-      "justify-center",
-      "items-center",
-      "mx-auto"
-  );
-  addQuantityBtn.addEventListener("click", () => {
-    updatedItem = { ...item, quantity: item.quantity + 1 };
-    fetch(`/api/items/${item.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updatedItem),
-    })
-        .then(() => {
-          const li = itemList.querySelector(`li[data-id="${item.id}"]`);
-          const updatedLi = createItemElement(updatedItem);
-          itemList.replaceChild(updatedLi, li);
+
+document.getElementById('item-modal').addEventListener('shown.bs.modal', function (event) {
+    console.log("Add item modal: 'shown'")
+    let inputField = document.getElementById('item_name');
+    inputField.focus();
+    inputField.select();
+    populateEspDropdown();
+});
+document.getElementById('item_esp_select').addEventListener('change', function () {
+    console.log("ESP Select changed");
+    let selectEspDropdown = document.getElementById('item_esp_select');
+    let rows = selectEspDropdown.options[selectEspDropdown.selectedIndex].getAttribute("data-esp-rows");
+    let columns = selectEspDropdown.options[selectEspDropdown.selectedIndex].getAttribute("data-esp-columns");
+    let startX = selectEspDropdown.options[selectEspDropdown.selectedIndex].getAttribute("data-esp-start-x");
+    let startY = selectEspDropdown.options[selectEspDropdown.selectedIndex].getAttribute("data-esp-start-y");
+    let serpentineDirection = selectEspDropdown.options[selectEspDropdown.selectedIndex].getAttribute("data-esp-serpentine");
+    drawGrid("item", rows, columns, startX, startY, serpentineDirection);
+});
+
+function drawGrid(mode, rows, columns, startX, startY, serpentineDirection) {
+    console.log("Draw grid running in mode: \"" + mode + "\"")
+    var clickedCells = [];
+    var canvasContainer = document.getElementById(mode + '-canvas-container');
+    var responsiveCanvas = document.getElementById(mode + '-responsive-canvas');
+    // Get the actual pixel width of the canvas container
+    let containerStyle = window.getComputedStyle(canvasContainer);
+    let containerPadding = parseFloat(containerStyle.paddingLeft) + parseFloat(containerStyle.paddingRight);
+    let containerWidth = canvasContainer.clientWidth - containerPadding;
+    let containerHeight = canvasContainer.clientHeight;
+    responsiveCanvas.width = containerWidth;
+    responsiveCanvas.height = containerHeight;
+    if (mode == "esp") {
+        rows = parseInt(document.getElementById('esp_rows').value);
+        columns = parseInt(document.getElementById('esp_columns').value);
+        startX = document.getElementById('esp_startx').options[document.getElementById('esp_startx').selectedIndex].getAttribute("data-startx");
+        startY = document.getElementById('esp_starty').options[document.getElementById('esp_starty').selectedIndex].getAttribute("data-starty");
+        serpentineDirection = document.getElementById('esp_serpentine').options[document.getElementById('esp_serpentine').selectedIndex].getAttribute("data-serpentine");
+    }
+    console.log("startX: " + startX + ", " + "startY: " + startY + ", " + "serpentineDirection: " + serpentineDirection)
+    let canvas = document.getElementById(mode + '-responsive-canvas');
+    let ctx = canvas.getContext('2d');
+    let lineWidth = 2;
+    let boxWidth = (canvas.width - lineWidth) / columns;
+    let boxHeight = boxWidth;
+    canvas.height = (boxHeight * rows) + lineWidth;
+    let lineColour = "#0d6efd";
+    let gridColour = "#6c757d";
+    let offset = 0;
+    let startIndicatorX = 0
+    let startIndicatorY = 0
+    let endIndicatorX = 0
+    let endIndicatorY = 0
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.lineWidth = lineWidth;
+    let halfLineWidth = lineWidth / 2;
+    // Draw grid
+    ctx.strokeStyle = gridColour;
+    for (let i = 0; i <= rows; i++) {
+        ctx.beginPath();
+        let y = i * boxHeight + halfLineWidth; // Add half of the line width
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+    }
+    for (let j = 0; j <= columns; j++) {
+        ctx.beginPath();
+        let x = j * boxWidth + halfLineWidth; // Add half of the line width
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+    }
+    // Draw line
+    ctx.strokeStyle = lineColour;
+    if (serpentineDirection === "Horizontal") {
+        // Draw horizontal lines
+        for (let i = 0; i <= rows - 1; i++) {
+            ctx.beginPath();
+            const y = (i * boxHeight + halfLineWidth) + (boxHeight / 2); // Add half of the line width
+            ctx.moveTo(boxWidth / 2, y);
+            ctx.lineTo(canvas.width - (boxWidth / 2), y);
+            ctx.stroke();
+        }
+        // Draw vertical lines
+        if (columns > 1) {
+            ctx.setLineDash([boxHeight]);
+        }
+        if (startY === "Top") {
+            startIndicatorY = 0;
+            endIndicatorY = rows - 1;
+        } else if (startY === "Bottom") {
+            startIndicatorY = rows - 1;
+            endIndicatorY = 0;
+        }
+        if (startX === "Left") {
+            offset = startY === "Top" ? boxHeight : (boxHeight * (rows % 2)) + boxHeight;
+            startIndicatorX = 0;
+            endIndicatorX = rows % 2 ? columns - 1 : 0;
+        } else if (startX === "Right") {
+            offset = startY === "Top" ? 0 : boxHeight * (rows % 2);
+            startIndicatorX = columns - 1;
+            endIndicatorX = rows % 2 ? 0 : columns - 1;
+        }
+        for (let i = 0; i <= columns - 1; i++) {
+            if (i === 0) {
+                ctx.lineDashOffset = offset;
+            } else if (i === columns - 1) {
+                ctx.lineDashOffset = offset + boxHeight;
+            }
+            if (i === 0 || i === columns - 1) {
+                ctx.beginPath();
+                let x = (i * boxWidth + halfLineWidth) + (boxWidth / 2); // Add half of the line width
+                ctx.moveTo(x, boxHeight / 2);
+                ctx.lineTo(x, canvas.height - (boxHeight / 2));
+                ctx.stroke();
+            }
+        }
+    } else {
+        // Draw vertical lines
+        for (let i = 0; i <= columns - 1; i++) {
+            ctx.beginPath();
+            let x = (i * boxWidth + halfLineWidth) + (boxWidth / 2); // Add half of the line width
+            ctx.moveTo(x, boxHeight / 2);
+            ctx.lineTo(x, canvas.height - (boxHeight / 2));
+            ctx.stroke();
+        }
+        // Draw horizontal lines
+        if (rows > 1) {
+            ctx.setLineDash([boxWidth]);
+        }
+        if (startX === "Left" && startY === "Top") {
+            offset = boxWidth;
+            startIndicatorX = 0;
+            startIndicatorY = 0;
+            endIndicatorX = columns - 1;
+            if (columns % 2) {
+                endIndicatorY = rows - 1;
+            } else {
+                endIndicatorY = 0;
+            }
+        } else if (startX === "Right" && startY === "Top") {
+            offset = (boxWidth * (columns % 2)) + boxWidth;
+            startIndicatorX = columns - 1;
+            startIndicatorY = 0;
+            endIndicatorX = 0;
+            if (columns % 2) {
+                endIndicatorY = rows - 1;
+            } else {
+                endIndicatorY = 0;
+            }
+        }
+        if (startX === "Left" && startY === "Bottom") {
+            offset = 0;
+            startIndicatorY = rows - 1;
+            startIndicatorX = 0;
+            endIndicatorX = columns - 1;
+            if (columns % 2) {
+                endIndicatorY = 0;
+            } else {
+                endIndicatorY = rows - 1;
+            }
+        } else if (startX === "Right" && startY === "Bottom") {
+            offset = boxWidth * (columns % 2);
+            startIndicatorY = rows - 1;
+            startIndicatorX = columns - 1;
+            endIndicatorX = 0;
+            if (columns % 2) {
+                endIndicatorY = 0;
+            } else {
+                endIndicatorY = rows - 1;
+            }
+        }
+        for (let i = 0; i <= rows - 1; i++) {
+            if (i === 0) {
+                ctx.lineDashOffset = offset;
+            } else if (i === rows - 1) {
+                ctx.lineDashOffset = offset + boxWidth;
+            }
+            if (i === 0 || i === rows - 1) {
+                ctx.beginPath();
+                let y = (i * boxHeight + halfLineWidth) + (boxHeight / 2); // Add half of the line width
+                ctx.moveTo(boxWidth / 2, y);
+                ctx.lineTo(canvas.width - (boxWidth / 2), y);
+                ctx.stroke();
+            }
+        }
+    }
+    // Draw circles in the middle of each grid square
+    for (let i = 0; i < rows; i++) {
+        for (let j = 0; j < columns; j++) {
+            let circleCenterX = j * boxWidth + boxWidth / 2 + halfLineWidth;
+            let circleCenterY = i * boxHeight + boxHeight / 2 + halfLineWidth;
+            let circleRadius = Math.min(boxWidth, boxHeight) / 15;
+            ctx.beginPath();
+            ctx.arc(circleCenterX, circleCenterY, circleRadius, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffc107';
+            ctx.fill();
+        }
+    }
+    let indicatorCircleRadius = Math.min(boxWidth, boxHeight) / 8;
+    let startCircleCenterX = startIndicatorX * boxWidth + boxWidth / 2 + halfLineWidth;
+    let startCircleCenterY = startIndicatorY * boxHeight + boxHeight / 2 + halfLineWidth;
+    console.log(startCircleCenterX + ", " + startCircleCenterY);
+    ctx.beginPath();
+    ctx.arc(startCircleCenterX, startCircleCenterY, indicatorCircleRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#198754';
+    ctx.fill();
+    let endCircleCenterX = endIndicatorX * boxWidth + boxWidth / 2 + halfLineWidth;
+    let endCircleCenterY = endIndicatorY * boxHeight + boxHeight / 2 + halfLineWidth;
+    console.log(endCircleCenterX + ", " + endCircleCenterY);
+    ctx.beginPath();
+    ctx.arc(endCircleCenterX, endCircleCenterY, indicatorCircleRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#dc3545';
+    ctx.fill();
+
+    function handleCellClick(event) {
+        console.log("Canvas clicked");
+        // Get the size and position of the canvas
+        let rect = canvas.getBoundingClientRect();
+        // Calculate the x and y coordinates of the click relative to the canvas
+        let x = event.clientX - rect.left;
+        let y = event.clientY - rect.top;
+        // Calculate which row and column was clicked based on the click coordinates
+        let clickedRow = Math.floor(y / boxHeight);
+        let clickedColumn = Math.floor(x / boxWidth);
+        let clickedCell = {
+            row: clickedRow,
+            column: clickedColumn
+        }; // Store clicked cell info
+        // Find if the clicked cell is already in the clickedCells array
+        let cellIndex = clickedCells.findIndex(cell => cell.row === clickedRow && cell.column === clickedColumn);
+        // If the clicked cell is not in the array, add it; otherwise, remove it
+        if (cellIndex === -1) {
+            clickedCells.push(clickedCell);
+        } else {
+            clickedCells.splice(cellIndex, 1);
+        }
+        console.log(clickedCells);
+        redrawGrid();
+    }
+
+    function redrawGrid() {
+        console.log("Rows: " + rows + ", Columns: " + columns);
+        // Loop through rows and columns of the grid
+        for (let i = 0; i < rows; i++) {
+            for (let j = 0; j < columns; j++) {
+                // Check if the current cell is clicked (present in clickedCells)
+                let isClicked = clickedCells.some(cell => cell.row === i && cell.column === j);
+                // Calculate the center and radius of the circle to be drawn for each cell
+                let circleCenterX = j * boxWidth + boxWidth / 2 + halfLineWidth;
+                let circleCenterY = i * boxHeight + boxHeight / 2 + halfLineWidth;
+                let circleRadius = Math.min(boxWidth, boxHeight) / 15;
+                ctx.beginPath();
+                ctx.arc(circleCenterX, circleCenterY, circleRadius, 0, Math.PI * 2);
+                ctx.fillStyle = isClicked ? '#17a2b8' : '#ffc107';
+                ctx.fill();
+            }
+        }
+    }
+
+    if (mode == "item") {
+        // Remove the existing click event listener, if any
+        canvas.removeEventListener('click', handleCellClick);
+        // Add the click event listener
+        canvas.addEventListener('click', handleCellClick);
+    }
+}
+
+// Define an array to store fetched items
+let fetchedItems = [];
+
+function loadItems() {
+    fetch("/api/items")
+        .then((response) => response.json())
+        .then((data) => {
+            // Store fetched items in the array
+            fetchedItems = data;
+            //generateItemsList();
+            generateItemsGrid();
         })
         .catch((error) => console.error(error));
-  });
-  return addQuantityBtn;
+
 }
 
-// Remove quantity
-function removeQuantity(item) {
-  console.log(`Quantity of ${item.name}: ${item.quantity}`);
-}
+function generateItemsGrid() {
+    const itemsContainer = document.getElementById('items-container-grid');
 
-// Create remove quantity button
-function createRemoveQuantityButton(item) {
-  const removeQuantityBtn = document.createElement("button");
-  removeQuantityBtn.setAttribute('class', 'material-symbols-outlined');
-  removeQuantityBtn.innerText = "do_not_disturb_on";
-  removeQuantityBtn.classList.add(
-      "text-blue-500",
-      "hover:text-red-700",
-      "h-8",
-      "w-8",
-      "rounded-full",
-      "text-4xl",
-      "font-bold",
-      "flex",
-      "justify-center",
-      "items-center",
-      "mx-auto"
-  );
-  removeQuantityBtn.addEventListener("click", () => {
-    if (item.quantity > 0) {
-      updatedItem = { ...item, quantity: item.quantity - 1 };
-      fetch(`/api/items/${item.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updatedItem),
-      })
-          .then(() => {
-            const li = itemList.querySelector(`li[data-id="${item.id}"]`);
-            const updatedLi = createItemElement(updatedItem);
-            itemList.replaceChild(updatedLi, li);
-          })
-          .catch((error) => console.error(error));
-    }
-  });
-  return removeQuantityBtn;
-}
+    // Clear previous content in the container if needed
+    itemsContainer.innerHTML = '';
 
-// show quantity
-function showQuantity(item) {
-  console.log(`Quantity of ${item.name}: ${item.quantity}`);
-}
+    fetchedItems.forEach((item) => {
+        const col = document.createElement('div');
+        col.classList.add('col-6', 'col-sm-4', 'col-md-3', 'col-lg-2', 'mb-3');
 
-const search = document.getElementById("search");
+        const template = `
+        <div class="card overflow-hidden position-relative">
+            <div class="overflow-hidden">
+                <img src="${item.image}" class="card-img-top" alt="${item.name}">
+                <div class="position-absolute top-0 end-0 show-on-hover d-none"></div>
+            </div>
+            <div class="card-body p-2">
+                <a href="${item.link}" target="_blank" class="card-title-link">
+                    <h5 class="card-title" data-bs-toggle="tooltip" title="Shop for more">${item.name}</h5>
+                </a>
+                <div class="d-flex justify-content-center align-items-center mb-2">
+                    <button class="btn btn-outline-info me-auto locate-btn" data-bs-toggle="tooltip" title="Locate" data-item-id="${item.id}">
+                        <span class="icon-n4px"><i data-lucide="lightbulb"></i></span>
+                    </button>
+                    <button class="btn btn-outline-primary edit-btn" data-bs-toggle="tooltip" title="Edit">
+                        <span class="icon-n4px"><i data-lucide="file-edit"></i></span>
+                    </button>
+                    <button class="btn btn-outline-danger ms-auto delete-btn" data-bs-toggle="tooltip" title="Delete" data-item-id="${item.id}">
+                        <span class="icon-n4px"><i data-lucide="trash"></i></span>
+                    </button>
+                </div>
+                <div class="d-flex justify-content-center align-items-center">
+                    <button class="btn btn-outline-danger me-auto minus-btn" data-bs-toggle="tooltip" title="-1 from stock" data-item-id="${item.id}">
+                        <span class="icon-n4px"><i data-lucide="minus"></i></span>
+                    </button>
+                    <span id="quantity-${item.id}">${item.quantity}</span>
+                    <button class="btn btn-outline-success ms-auto plus-btn" data-bs-toggle="tooltip" title="+1 to stock" data-item-id="${item.id}">
+                        <span class="icon-n4px"><i data-lucide="plus"></i></span>
+                    </button>
+                </div>
+            </div>
+        </div>`;
 
-function filterItems(e) {
-  const searchText = e.target.value.toLowerCase();
-  const items = itemList.getElementsByTagName("li");
+        col.innerHTML = template;
+        itemsContainer.appendChild(col);
+    });
+    initialiseTooltips();
 
-  Array.from(items).forEach((item) => {
-    const itemName = item.getElementsByTagName("h2")[0].textContent;
-    if (itemName.toLowerCase().indexOf(searchText) !== -1) {
-      item.style.display = "flex";
-    } else {
-      item.style.display = "none";
-    }
-  });
-}
-
-search.addEventListener("input", filterItems);
-
-// Create item element
-function createItemElement(item) {
-  const li = document.createElement("li");
-  li.dataset.id = item.id;
-  li.dataset.name = item.name;
-  li.dataset.quantity = parseInt(item.quantity, 10);  // Store as numbers
-  li.dataset.ip = item.ip;
-  li.dataset.tags = item.tags;
-  li.classList.add("item");
-
-  const wrapper = document.createElement("div");
-  wrapper.classList.add(
-      "item-wrapper",
-      "drop-shadow-md",
-      "h-full",
-      "w-11/12",
-      "md:w-full",
-      "mx-auto",
-      "p-2",
-      "rounded-md",
-      "grid",
-      "grid-cols-1",
-      "gap-2",
-      "items-center"
-  );
-  li.appendChild(wrapper);
-
-  const img = document.createElement("img");
-  img.src = item.image;
-  img.classList.add( "w-32","h-32","rounded-lg", "mx-auto","item-image");//reactive size: "sm:h-24","md:h-32","lg:h-32","xl:h-48","sm:w-24","md:w-32","lg:w-32", "xl:w-48",
-  wrapper.appendChild(img);
-
-  const div = document.createElement("div");
-  div.classList.add(
-      "text-center",
-      "text-slate",
-      "text-sm",
-      "grid",
-      "grid-cols-1",
-      "gap-2"
-  );
-  wrapper.appendChild(div);
-
-  const h2 = document.createElement("h2");
-  h2.innerText = item.name;
-  h2.classList.add(
-      "text-lg",
-      "text-slate",
-      "overflow-hidden",
-      "whitespace-nowrap",
-      "overflow-ellipsis",
-      "hover:whitespace-normal",
-  );
-  div.appendChild(h2);
-
-  const p = document.createElement("p");
-  const a = document.createElement("a");
-  a.href = item.link;
-  a.target = "_blank";
-  a.innerText = "Buy more";
-  a.classList.add("hover:font-bold", "hover:underline", "hover:text-blue-700"); // Add hover styles
-  p.appendChild(a);
-  div.appendChild(p);
-
-  const innerWrapper = document.createElement("div");
-  innerWrapper.classList.add("grid", "grid-cols-3", "gap-2");
-  div.appendChild(innerWrapper);
-
-  const deleteBtn = createDeleteButton(item);
-  innerWrapper.appendChild(deleteBtn);
-
-  const editBtn = createEditButton(item);
-  innerWrapper.appendChild(editBtn);
-
-  const locateBtn = createLocateButton(item);
-  innerWrapper.appendChild(locateBtn);
-
-  const removeQuantityBtn = createRemoveQuantityButton(item);
-  innerWrapper.appendChild(removeQuantityBtn);
-
-  const quantity = document.createElement("span");
-  quantity.innerText = item.quantity;
-  quantity.classList.add(
-      "text-center",
-      "text-slate",
-      "text-lg",
-      "justify-center",
-      "items-center",
-      "mx-auto",
-      "pt-1"
-  );
-  innerWrapper.appendChild(quantity);
-
-  const addQuantityBtn = createAddQuantityButton(item);
-  innerWrapper.appendChild(addQuantityBtn);
-
-  return li;
-}
-
-// Load items from server
-function loadItems() {
-  fetch("/api/items")
-      .then((response) => response.json())
-      .then((data) => {
-        data.forEach((item) => {
-          const li = createItemElement(item);
-          itemList.appendChild(li);
-
+    const locateButtons = document.querySelectorAll('.locate-btn');
+    locateButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const itemId = button.getAttribute('data-item-id');
+            console.log("Locate button '" + itemId + "' pressed.");
+            fetch(`/api/items/${itemId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ action: 'locate' }),
+            }).catch((error) => console.error(error));
         });
-      })
-      .catch((error) => console.error(error));
+    });
 
+    const minusButtons = document.querySelectorAll('.minus-btn');
+    minusButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const itemId = button.getAttribute('data-item-id');
+            console.log("Minus button '" + itemId + "' pressed.");
+            const item = fetchedItems.find((item) => item.id === itemId);
+            if (item && item.quantity > 0) {
+                const updatedItem = { ...item, quantity: item.quantity - 1 };
+                fetch(`/api/items/${itemId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatedItem),
+                })
+                    .then(() => {
+                        const quantityElement = document.getElementById(`quantity-${itemId}`);
+                        if (quantityElement) {
+                            quantityElement.textContent = updatedItem.quantity;
+                        }
+                    })
+                    .catch((error) => console.error(error));
+            }
+        });
+    });
+
+    const plusButtons = document.querySelectorAll('.plus-btn');
+    plusButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const itemId = button.getAttribute('data-item-id');
+            console.log("Plus button '" + itemId + "' pressed.");
+            const item = fetchedItems.find((item) => item.id === itemId);
+            if (item) {
+                const updatedItem = { ...item, quantity: item.quantity + 1 };
+                fetch(`/api/items/${itemId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatedItem),
+                })
+                    .then(() => {
+                        // Handle UI update if needed
+                    })
+                    .catch((error) => console.error(error));
+            }
+        });
+    });
 }
+
+
+function generateItemsList() {
+    const itemsContainer = document.getElementById('items-container-list');
+
+    // Clear previous content in the container if needed
+    itemsContainer.innerHTML = '';
+
+    // Create table element
+    const table = document.createElement('table');
+    table.classList.add('table', 'table-striped');
+
+    // Create table header
+    const tableHeader = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const headerName = document.createElement('th');
+    headerName.textContent = 'Name';
+    const headerLink = document.createElement('th');
+    headerLink.textContent = 'Link';
+    headerRow.appendChild(headerName);
+    headerRow.appendChild(headerLink);
+    tableHeader.appendChild(headerRow);
+    table.appendChild(tableHeader);
+
+    // Create table body
+    const tableBody = document.createElement('tbody');
+    fetchedItems.forEach((item) => {
+        const row = document.createElement('tr');
+
+        // Create table cells for item properties
+        const nameCell = document.createElement('td');
+        nameCell.textContent = item.name;
+
+        const linkCell = document.createElement('td');
+        const link = document.createElement('a');
+        link.href = item.link;
+        link.textContent = 'View Item';
+        linkCell.appendChild(link);
+
+        // Append cells to the row
+        row.appendChild(nameCell);
+        row.appendChild(linkCell);
+
+        // Append the row to the table body
+        tableBody.appendChild(row);
+    });
+
+    // Append table body to the table
+    table.appendChild(tableBody);
+
+    // Append table to the container
+    itemsContainer.appendChild(table);
+}
+
+function initialiseTooltips() {
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+}
+
+document.getElementById('esp_rows').addEventListener('change', function () {
+    drawGrid("esp");
+});
+document.getElementById('esp_columns').addEventListener('change', function () {
+    drawGrid("esp");
+});
+document.getElementById('esp_startx').addEventListener('change', function () {
+    drawGrid("esp");
+});
+document.getElementById('esp_starty').addEventListener('change', function () {
+    drawGrid("esp");
+});
+document.getElementById('esp_serpentine').addEventListener('change', function () {
+    drawGrid("esp");
+});
 
 loadItems();
-
-
-document.getElementById("save-item").addEventListener("click", addItem);
-document.getElementById("btn-add").addEventListener("click", function() {isEditingItem = false;});
-document.getElementById("btn-add").addEventListener("click", toggleAddForm);
-document.getElementById("btn-add").addEventListener("click", populateEspDropdown);
-//Function to Ad ESPs
-// Function to add an ESP item
-
-function populateEspDropdown() {
-  selectEspDropdownIP.innerHTML = "";
-  // Add "Add ESP" option at the first position
-  const addEspOption = document.createElement("option");
-  addEspOption.value = "select";
-  addEspOption.textContent = "Select ESP";
-  selectEspDropdownIP.appendChild(addEspOption);
-  // Fetch and populate the rest of the options
-  fetch("/api/esp")
-      .then((response) => response.json())
-      .then((data) => {
-        data.forEach((esp) => {
-          const option = document.createElement("option");
-          option.value = esp.id;
-          option.textContent = esp.name ;
-          selectEspDropdownIP.appendChild(option);
-        });
-      })
-      .catch((error) => console.error(error));
-}
-function findIndexByIP(ip) {
-  const options = selectEspDropdownIP.options;
-  for (let i = 0; i < options.length; i++) {
-    const optionValue = options[i].textContent.trim(); // Trim whitespace from option value
-    if (optionValue.toLowerCase() === ip.trim().toLowerCase()) { // Case-insensitive comparison
-      return i; // Return the index when the IP matches the selected option value.
-    }
-  }
-  return 0; // Return 0 if no match is found.
-}
-document.getElementById("sort_method").addEventListener("change", sortItems);
-
-// Sorting function
-function sortItems() {
-  const sortMethod = document.getElementById("sort_method").value;
-  updateSortTitle();
-  // Get the list of items
-  const items = Array.from(itemList.children);
-  // Sort the items based on the selected sorting method
-  const sortedItems = items.sort((a, b) => {
-    const itemA = a.dataset[sortMethod];
-    const itemB = b.dataset[sortMethod];
-    if (sortMethod === 'quantity') {
-      // Convert values to numbers for numeric comparison
-      return parseInt(itemA, 10) - parseInt(itemB, 10);
-    } else {
-      // For other fields, use string comparison
-      return itemA.localeCompare(itemB);
-    }
-  });
-
-  // Clear the current list
-  itemList.innerHTML = '';
-
-  // Append the sorted items to the list
-  sortedItems.forEach(item => {
-    itemList.appendChild(item);
-  });
-}
-
-function updateSortTitle() {
-  var select = document.getElementById("sort_method");
-  var selectedOption = select.options[select.selectedIndex];
-  var title = document.getElementById("sort_title");
-
-  title.textContent = "Sort by: " + selectedOption.textContent;
-}
-CopyBnt.addEventListener('click', function (){
-  isEditingItem = false;
-  addItem(event);
-})
-
-
-
-// Define a function to populate the "select_esp" dropdown
-populateEspDropdown();
-updateSortTitle();
-
-
