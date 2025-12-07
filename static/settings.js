@@ -40,7 +40,8 @@ function addSettings(event) {
     if (language === undefined){
         language = "en"
     }
-    const settings = {brightness, timeout, lightMode, colors, language};
+    const search_locates = document.getElementById('search_locates').checked ? 1 : 0;
+    const settings = { brightness, timeout, lightMode, colors, language, search_locates };
     // Save the settings in the database using fetch
     fetch("/api/settings", {
         method: "POST",
@@ -48,6 +49,9 @@ function addSettings(event) {
         body: JSON.stringify(settings),
     })
         .then((response) => response.json())
+        .then(() => {
+            updateSearchInput(settings.search_locates);
+        })
         .catch((error) => console.error(error));
 }
 
@@ -72,8 +76,18 @@ function loadSettings() {
             lightMode = settings.lightMode;
             language = settings.language;
             loadAvailableLanguages();
+
+            document.getElementById('search_locates').checked = settings.search_locates;
+            updateSearchInput(settings.search_locates);
         })
         .catch((error) => console.error(error));
+}
+
+document.getElementById('search_locates').addEventListener('change', (e) => {
+    addSettings(e);
+});
+function updateSearchInput(value) {
+    document.getElementById('search').setAttribute('data-search-locates', value);
 }
 
 window.addEventListener('DOMContentLoaded', () => {

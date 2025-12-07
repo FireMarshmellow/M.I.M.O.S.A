@@ -199,6 +199,20 @@
                 </div>
             </div>
             <hr>
+            <div class="row">
+                <h6 id="search">Search</h6>
+                <div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="search_locates" value="1">
+                        <label class="form-check-label" for="search_locates" id="search_locates_label">Search Locates</label>
+                    </div>
+                    <div class="alert alert-info" role="alert" id="search_locates_info">
+                        If on, and only one item is found the search triggers automatic a locate request.
+                        So you can see the item directly in your storage.
+                    </div>
+                </div>
+            </div>
+            <hr>
             <div class="col-4">
                 <div class="form-floating mb-3">
                     <select class="form-select" id="language-selector">
@@ -246,6 +260,11 @@
                         <input type="text" class="form-control" id="item_name" placeholder="Name" required>
                         <label id="item_name_label" for="item_name">Item name</label>
                     </div>
+                        <div class="form-floating mb-3">
+                            <input type="text" class="form-control" id="item_article_number"
+                                placeholder="Article Number">
+                            <label id="item_article_number_label" for="item_article_number">Item Article Number</label>
+                        </div>
                     <div class="form-floating mb-3">
                         <input type="text" class="form-control" id="item_url" placeholder="URL">
                         <label id="item_url_label" for="item_url">Item URL</label>
@@ -440,7 +459,29 @@
         </div>
     </div>
 
-
+    <!-- QR-Code Modal -->
+    <div class="modal fade" id="qrCodeModal" tabindex="-1" aria-labelledby="qrCodeModallabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="qrCodeModalLabel">QR Code</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" style="max-height: 40rem; overflow: hidden; padding: 0;">
+                    <div class="img-container"
+                        style="width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden;">
+                        <img id="qr-code-image" src="" alt="QR Code"
+                            style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="closeQrCode"
+                        data-bs-dismiss="modal">Close</button>
+                    <button id="download-qr-code-btn" class="btn btn-primary">Download Image</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="modal fade" id="esp-modal" tabindex="-1" aria-labelledby="esp-modal-label" aria-hidden="true">
         <div class="modal-dialog">

@@ -36,6 +36,7 @@ async function addItem(event) {
     // Gather item information from the form
     const name = document.getElementById("item_name").value;
     const link = document.getElementById("item_url").value || "";
+    const article_number = document.getElementById("item_article_number").value || "";
     const image = document.getElementById("item_image").value.replace(window.location.href, "");
     let position = localStorage.getItem('led_positions');
     let quantity = document.getElementById("item_quantity").value;
@@ -53,6 +54,7 @@ async function addItem(event) {
     const item = {
         name,
         link,
+        article_number,
         image,
         position,
         quantity,
@@ -196,6 +198,7 @@ function createItem(item) {
     // Set dataset attributes to store item information
     col.dataset.id = item.id;
     col.dataset.name = item.name;
+    col.dataset.item_article_number = item.article_number;
     col.dataset.quantity = parseInt(item.quantity, 10);  // Store as numbers
     col.dataset.ip = item.ip;
     if (!Array.isArray(item.position)) {
@@ -238,6 +241,7 @@ function createItem(item) {
                         <li><a id="copy_item_${item.id}" class="dropdown-item copy-btn" href="#">Copy Item</a></li>
                         <li><a id="delete_item_${item.id}" class="dropdown-item delete-btn" href="#">Delete</a></li>
                         <li><a id="crop_image_${item.id}" class="dropdown-item image-edit-btn" href="#">Crop Image</a></li>
+                        <li><a id="view_qrcode_${item.id}" class="dropdown-item qr-code-btn" href="#">View QR-Code</a></li>
                     </ul>
                 </div>
             </div>
@@ -381,8 +385,17 @@ function createItem(item) {
         }
     });
 
+    col.querySelector('.qr-code-btn').addEventListener('click', () => {
+        const qrCodeModal = document.getElementById('qrCodeModal');
+        const qrCodeImage = document.getElementById('qr-code-image');
+        const qrCodeUrl = `/api/items/${item.id}/qr-code`;
+        const downloadQrCodeButton = document.getElementById('download-qr-code-btn');
+        qrCodeImage.src = qrCodeUrl;
+        downloadQrCodeButton.setAttribute('data-download-url', qrCodeUrl);
+        downloadQrCodeButton.setAttribute('data-item-id', item.id);
 
-
+        $(qrCodeModal).modal("show");
+    });
 
     col.querySelector('.edit-btn').addEventListener('click', () => {
         // Set flag for editing, remove local storage, and show the item modal
@@ -390,6 +403,7 @@ function createItem(item) {
         removeLocalStorage();
         $("#item-modal").modal("show");
         document.getElementById("item_name").value = item.name;
+        document.getElementById("item_article_number").value = item.article_number;
         document.getElementById("item_url").value = item.link;
         document.getElementById("item_image").value = item.image;
         document.getElementById("item_quantity").value = item.quantity;
@@ -492,6 +506,7 @@ function initialiseTooltips() {
 function resetModal() {
     document.getElementById("item_name").value = "";
     document.getElementById("item_url").value = "";
+    document.getElementById("item_article_number").value = "";
     document.getElementById("item_image").value = "";
     document.getElementById("item_quantity").value = "";
     document.getElementById("item_image_upload").value = "";
@@ -541,14 +556,26 @@ document.getElementById("search").addEventListener("input", function (e){
     const searchText = e.target.value.toLowerCase();
     const items = Array.from(itemsContainer.children);
 
+    let foundItems = [];
+
     Array.from(items).forEach((item) => {
         const itemName = item.dataset["name"];
-        if (itemName.toLowerCase().indexOf(searchText) !== -1) {
+        const itemArticleNumber = item.dataset["item_article_number"];
+        if (itemName.toLowerCase().indexOf(searchText) !== -1 || (itemArticleNumber && itemArticleNumber.toLowerCase().indexOf(searchText) !== -1)) {
             item.style.display = "flex";
+            foundItems.push(item.dataset);
         } else {
             item.style.display = "none";
         }
     });
+
+    if (foundItems.length == 1 && e.target.getAttribute('data-search-locates') == 1) {
+        fetch(`/api/items/${foundItems[0].id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ action: "locate" }),
+        }).catch((error) => console.error(error));
+    }
 });
 
 
@@ -612,7 +639,14 @@ const handleEmptyFields = (formType) => {
     return false;
 };
 
-
+document.getElementById('download-qr-code-btn').addEventListener('click', function (e) {
+    const link = document.createElement('a');
+    link.href = e.target.getAttribute('data-download-url');
+    link.download = 'qrcode' + e.target.getAttribute('data-item-id') + '.png';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+});
 
 loadItems();
 window.addEventListener('resize', function() {

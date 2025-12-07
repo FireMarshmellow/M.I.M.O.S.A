@@ -21,6 +21,7 @@ def create_combined_db():
             CREATE TABLE IF NOT EXISTS items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT,
+                article_number TEXT,
                 link TEXT,
                 image TEXT,
                 position TEXT,
@@ -52,7 +53,8 @@ def create_combined_db():
                 timeout INTEGER DEFAULT 5,
                 lightMode TEXT DEFAULT 'light',
                 colors TEXT DEFAULT '[#00ff00, #00ff00]',
-                language TEXT DEFAULT 'en'
+                language TEXT DEFAULT 'en',
+                search_locates BOOLEAN NOT NULL CHECK (search_locates IN (0, 1)) DEFAULT 0
             )
         ''')
 
@@ -71,6 +73,15 @@ def create_combined_db():
     if 'language' not in columns:
         cursor.execute("ALTER TABLE settings ADD COLUMN language TEXT DEFAULT 'en'")
         conn_combined.commit()
+    if 'search_locates' not in columns:
+        cursor.execute("ALTER TABLE settings ADD COLUMN search_locates BOOLEAN NOT NULL CHECK (search_locates IN (0, 1)) DEFAULT 0")
+        conn_combined.commit()
+
+    cursor.execute("PRAGMA table_info(items)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'article_number' not in columns:
+        cursor.execute("ALTER TABLE items ADD COLUMN article_number TEXT NULL")
+        conn_combined.commit()
 
     return conn_combined
 
@@ -86,8 +97,8 @@ def read_items():
 def write_item(item):
     conn = create_combined_db()
     cursor = conn.cursor()
-    cursor.execute('INSERT INTO items (name, link, image, position, quantity, ip, tags) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                   [item['name'], item['link'], item['image'], item['position'], item['quantity'], item['ip'],
+    cursor.execute('INSERT INTO items (name, article_number, link, image, position, quantity, ip, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                   [item['name'], item['article_number'], item['link'], item['image'], item['position'], item['quantity'], item['ip'],
                     item['tags']])
     lastId = cursor.lastrowid
     conn.commit()
@@ -116,8 +127,8 @@ def update_item(id, data):
     try:
 
         conn.execute(
-            'UPDATE items SET name = ?, link = ?, image = ?, position = ?, quantity = ?, ip = ?, tags = ? WHERE id = ?',
-            [data['name'], data['link'], data['image'], data['position'], data['quantity'], data['ip'], data['tags'],
+            'UPDATE items SET name = ?, article_number = ?, link = ?, image = ?, position = ?, quantity = ?, ip = ?, tags = ? WHERE id = ?',
+            [data['name'], data['article_number'], data['link'], data['image'], data['position'], data['quantity'], data['ip'], data['tags'],
              id])
         conn.commit()
     except sqlite3.Error as e:
@@ -336,9 +347,9 @@ def update_settings(settings):
         cursor = conn.cursor()
         cursor.execute('DELETE FROM settings')  # Clear existing settings
         cursor.execute('''
-            INSERT INTO settings (brightness, timeout, lightMode, colors, language)
-            VALUES (?, ?, ?, ?, ?)
-        ''', [settings['brightness'], settings['timeout'], settings['lightMode'], settings['colors'], settings['language']])
+            INSERT INTO settings (brightness, timeout, lightMode, colors, language, search_locates)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', [settings['brightness'], settings['timeout'], settings['lightMode'], settings['colors'], settings['language'], settings['search_locates']])
         conn.commit()
     except sqlite3.Error as e:
         print(f"SQLite error while updating settings: {e}")

@@ -8,6 +8,9 @@ import db
 import requests
 import time
 import os
+import qrcode
+from PIL import Image
+import io
 from werkzeug.utils import secure_filename
 
 # Creating a Flask application instance
@@ -31,7 +34,6 @@ def proxy_image():
     image_url = request.args.get('url')
     response = requests.get(image_url, stream=True)
     return Response(response.content, content_type=response.headers['Content-Type'])
-
 
 # Route to Favicon
 @app.route('/favicon.ico')
@@ -228,6 +230,37 @@ def item(id):
         else:
             return jsonify({'error': 'Invalid action'}), 400
 
+@app.route('/api/items/<id>/qr-code', methods=['GET'])
+def qr_code(id):
+    item = db.get_item(id)
+    value = item['name']
+    if item['article_number']:
+        value = item['article_number']
+
+    qr = qrcode.QRCode(
+        version=5,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=10,
+        border=4
+    )
+    qr.add_data(value)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill='black', back_color='white').convert('RGBA')
+
+    logo = Image.open('./favicon.png')
+
+    qr_width, qr_height = qr_img.size
+    logo_size = qr_width // 4
+    logo = logo.resize((logo_size, logo_size), Image.LANCZOS)
+
+    pos = ((qr_width - logo_size) // 2, (qr_height - logo_size) // 2)
+    qr_img.paste(logo, pos, mask=logo)
+
+    img_io = io.BytesIO()
+    qr_img.save(img_io, format='PNG')
+    img_io.seek(0)
+
+    return Response(img_io, mimetype='image/png')
 
 def send_request(target_ip, data, timeout=0.2):
     url = f"http://{target_ip}/json/state"
